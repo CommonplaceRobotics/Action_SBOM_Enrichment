@@ -117,4 +117,4 @@ Bei C/C++-Projekten mit CMake und Conan werden die folgenden Einträge versucht 
 Archive (.zip, .gz, .bz2) werden als ```archive```, ```structured``` und ```composition``` = ```dependency``` erkannt.
 
 ### remove-components
-Einträge in diesem Array definieren Komponenten, die (falls vorhanden) aus der SBOM entfernt werden sollten, bspw. weil es sich um Build- oder Test-Tools handelt. Die Enträge sind ```bom-ref```-Präfixe wie oben definiert.
+Einträge in diesem Array definieren Komponenten, die (falls vorhanden) aus der SBOM entfernt werden sollten, bspw. weil es sich um Build- oder Test-Tools handelt. Die Enträge sind ```bom-ref```- oder ```purl```-Präfixe wie oben definiert.

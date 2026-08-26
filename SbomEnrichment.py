@@ -792,6 +792,16 @@ def RemoveComponents(components: list):
                 print("Removing component '" + bom_ref + "'...")
                 sbom_json["components"].remove(component)
 
+        # if bom-ref was not found: try purl
+        for component in sbom_json["components"]:
+            if component["purl"].startswith(bom_ref_prefix):
+                # Get bom-ref from components list
+                bom_ref = component["bom-ref"]
+
+                # Remove from components list
+                print("Removing component '" + bom_ref + " (purl '" + component["purl"] + "')'...")
+                sbom_json["components"].remove(component)
+
         if len(bom_ref) > 0:
             for dep in sbom_json["dependencies"]:
                 # Own entry
