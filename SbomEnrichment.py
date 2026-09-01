@@ -129,12 +129,15 @@ class EnrichmentDataBaseComponent:
         Returns:
             Filename (absolute or relative) or empty string
         """
+        if len(ninja_file) == 0:
+            return ""
+
         if Path(ninja_file).exists():
             with open(ninja_file, encoding="utf-8") as f:
                 for line in f:
                     if line.startswith("  LINK_LIBRARIES = "):
-                        for entry in line.split():
-                            filename = os.path.basename(entry)
+                        for filepath in line.split():
+                            filename = os.path.basename(filepath)
                             if (
                                 filename == dep_name
                                 or (filename == "lib" + dep_name + ".a")
@@ -143,7 +146,9 @@ class EnrichmentDataBaseComponent:
                                 or (filename == dep_name + ".dll")
                                 or (filename == dep_name + ".exe")
                             ):
-                                return entry
+                                return filepath
+        else:
+            print("ERROR: Ninja file '" + ninja_file + "' does not exist")
         return ""
 
     def GetHashFromPip(self):
@@ -208,9 +213,12 @@ class EnrichmentDataBaseComponent:
 
             if Path(ninja_file).exists():
                 file = self.GetDepFromNinja(dep_file, ninja_file)
-                if len(file) > 0 and Path(file).exists():
-                    self.filename_actual = file
-                    break
+                if len(file) > 0:
+                    if Path(file).exists():
+                        self.filename_actual = file
+                        break
+                    else:
+                        print("ERROR: File '" + file + "' from ninja does not exist")
 
     def CalculateHash(self, cmake_build_dir: str):
         """Calculates the if the file name is given"""
@@ -220,13 +228,25 @@ class EnrichmentDataBaseComponent:
             (hash256, hash512) = HashFile(self.filename_actual)
             self.deployable_hash_sha256 = hash256
             self.deployable_hash_sha512 = hash512
+        elif len(self.filenames) == 1 and len(self.filenames[0]) == 0:
+            id = self.bom_ref
+            if len(id) == 0:
+                id = self.purl
+            print(
+                "WARNING: No filename given or found for '"
+                + id
+                + "'"
+            )
         elif len(self.filenames) > 0:
+            id = self.bom_ref
+            if len(id) == 0:
+                id = self.purl
             print(
                 "WARNING: Could not generate file hash for '"
-                + self.bom_ref
-                + "', file "
+                + id
+                + "', no file name matched for '"
                 + str(self.filenames)
-                + " not found"
+                + "'"
             )
 
     def _SetStaticLinked(self):
@@ -709,7 +729,7 @@ def FindBomRefsForPURL(edb: EnrichtmentDataBase, sbom_json: dict):
                             if not exists:
                                 print(
                                     "\tFound bom-ref '"
-                                    + edbcomp.bom_ref
+                                    + component["bom-ref"]
                                     + "' for purl '"
                                     + edbcomp.purl
                                     + "', duplicating entry..."
@@ -720,7 +740,7 @@ def FindBomRefsForPURL(edb: EnrichtmentDataBase, sbom_json: dict):
                         else:
                             print(
                                 "\tFound bom-ref '"
-                                + edbcomp.bom_ref
+                                + component["bom-ref"]
                                 + "' for purl '"
                                 + edbcomp.purl
                                 + "', updating entry..."
@@ -742,11 +762,10 @@ def FindBomRefsForPURL(edb: EnrichtmentDataBase, sbom_json: dict):
                         for edbcomp2 in edb.components:
                             if edbcomp2.bom_ref == component["bom-ref"]:
                                 exists = True
-                                break
                         if not exists:
                             print(
                                 "\tFound bom-ref '"
-                                + edbcomp.bom_ref
+                                + component["bom-ref"]
                                 + "' for purl '"
                                 + edbcomp.purl
                                 + "', duplicating entry..."
@@ -757,13 +776,12 @@ def FindBomRefsForPURL(edb: EnrichtmentDataBase, sbom_json: dict):
                     else:
                         print(
                             "\tFound bom-ref '"
-                            + edbcomp.bom_ref
+                            + component["bom-ref"]
                             + "' for purl '"
                             + edbcomp.purl
                             + "', updating entry..."
                         )
                         edbcomp.bom_ref = component["bom-ref"]
-                        break
 
     # Remove wildcard entries
     for wc in wildcards:
