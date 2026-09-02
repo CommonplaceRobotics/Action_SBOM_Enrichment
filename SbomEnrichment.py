@@ -36,6 +36,8 @@ class EnrichmentDataBaseComponent:
     """
     purl = ""
     """PURL of the component"""
+    type: str = ""
+    """Component type, e.g. 'application', 'framework', 'library', 'firmware', 'file', 'device-driver'... No change if empty string"""
     creator = ""
     """Component e-mail address or website of the creator"""
     filenames = list()
@@ -97,9 +99,13 @@ class EnrichmentDataBaseComponent:
             if str(data["composition"]).lower() == "dependency":
                 self.is_assembly = False
 
+        if "type" in data:
+            self.type = data["type"]
+
     def __str__(self) -> str:
         d = dict()
         d["bom-ref"] = self.bom_ref
+        d["type"] = self.type
         d["creator"] = self.creator
         d["filenames"] = self.filenames
         d["filename_actual"] = self.filename_actual
@@ -142,6 +148,7 @@ class EnrichmentDataBaseComponent:
                                 filename == dep_name
                                 or (filename == "lib" + dep_name + ".a")
                                 or (filename == "lib" + dep_name + ".so")
+                                or (filename == "lib" + dep_name + ".lib")
                                 or (filename == dep_name + ".lib")
                                 or (filename == dep_name + ".dll")
                                 or (filename == dep_name + ".exe")
@@ -186,7 +193,7 @@ class EnrichmentDataBaseComponent:
                                 (hash256, hash512) = HashFile(tmpfn)
                                 self.deployable_hash_sha256 = hash256
                                 self.deployable_hash_sha512 = hash512
-                                print("Deleting file '" + tmpfn + "'...")
+                                print("Deleting temporary file '" + tmpfn + "'...")
                                 os.remove(tmpfn)
                                 return
         except Exception as e:
@@ -225,6 +232,7 @@ class EnrichmentDataBaseComponent:
         self.FindActualFileName()
 
         if len(self.filename_actual) > 0:
+            print("Hashing file '" + self.filename_actual + "'...")
             (hash256, hash512) = HashFile(self.filename_actual)
             self.deployable_hash_sha256 = hash256
             self.deployable_hash_sha512 = hash512
@@ -398,12 +406,15 @@ def EnrichComponent(edb: EnrichtmentDataBase, component: dict):
             if "properties" not in component:
                 component["properties"] = list()
 
+            # Type
+            if len(enrich_component.type) > 0:
+                print("\tSetting component type to '" + enrich_component.type + "'")
+                component["type"] = enrich_component.type
+
             # Creator
             if len(enrich_component.creator) > 0:
                 print(
-                    "\tAdding manufacturer contact to '"
-                    + enrich_component.bom_ref
-                    + "': '"
+                    "\tAdding manufacturer contact: '"
                     + enrich_component.creator
                     + "'..."
                 )
@@ -420,9 +431,7 @@ def EnrichComponent(edb: EnrichtmentDataBase, component: dict):
 
                 # sbomqs reads the manufacturer info from "supplier" instead of "manufacturer"
                 print(
-                    "\tAdding supplier contact to '"
-                    + enrich_component.bom_ref
-                    + "': '"
+                    "\tAdding supplier contact to: '"
                     + enrich_component.creator
                     + "'..."
                 )
@@ -575,13 +584,7 @@ def EnrichComponent(edb: EnrichtmentDataBase, component: dict):
                     if "name" in p and p["name"] == "bsi:component:filename":
                         has_filename = True
                 if not has_filename:
-                    print(
-                        "\tAdding filename '"
-                        + enrich_component.filename_actual
-                        + "' to '"
-                        + enrich_component.bom_ref
-                        + "'..."
-                    )
+                    print("\tAdding filename '" + filename + "'...")
                     filenameData = {"name": "bsi:component:filename", "value": filename}
                     component["properties"].append(filenameData)
             else:
@@ -613,11 +616,10 @@ def EnrichComponent(edb: EnrichtmentDataBase, component: dict):
                 print(
                     "\tAdding deployable hash of file '"
                     + enrich_component.filename_actual
-                    + "' to '"
-                    + enrich_component.bom_ref
                     + "'..."
                 )
-                uri = "file://" + enrich_component.filename_actual
+                filename = os.path.basename(enrich_component.filename_actual)
+                uri = "file://" + filename
                 hashData_sha256 = {
                     "alg": "SHA-256",
                     "content": enrich_component.deployable_hash_sha256,
@@ -691,7 +693,9 @@ def EnrichComponent(edb: EnrichtmentDataBase, component: dict):
                 pass
 
             # print(component)
-            break
+            return
+
+    print("WARNING: No enrichment data found for component '" + component["bom-ref"] + "'")
 
 
 def FindBomRefsForPURL(edb: EnrichtmentDataBase, sbom_json: dict):
@@ -704,11 +708,18 @@ def FindBomRefsForPURL(edb: EnrichtmentDataBase, sbom_json: dict):
     for edbcomp in edb.components:
         # if the bom-ref is not set but a PURL
         if len(edbcomp.bom_ref) == 0 and len(edbcomp.purl) > 0:
+            wildcard = False
+            exact = ""
             if str.endswith(edbcomp.purl, "*"):
+                # wildcard match: inserts the same data into multiple similarly named components
                 wildcard = True
                 purl = edbcomp.purl[:-1]
+            elif str.endswith(edbcomp.purl, "@"):
+                # any version match: matches by the exact purl before the '@', but also prefix match
+                exact = edbcomp.purl[:-1]
+                purl = edbcomp.purl
             else:
-                wildcard = False
+                # any other prefix match
                 purl = edbcomp.purl
 
             # update database entry or create new ones
@@ -717,7 +728,8 @@ def FindBomRefsForPURL(edb: EnrichtmentDataBase, sbom_json: dict):
                     if (
                         "bom-ref" in component
                         and "purl" in component
-                        and component["purl"].startswith(purl)
+                        and (component["purl"].startswith(purl)
+                             or (len(exact) > 0 and component["purl"] == exact))
                     ):
                         if wildcard:
                             # prüfen, ob es zu der bom-ref schon einen Eintrag gibt
@@ -754,7 +766,8 @@ def FindBomRefsForPURL(edb: EnrichtmentDataBase, sbom_json: dict):
                 if (
                     "bom-ref" in component
                     and "purl" in component
-                    and component["purl"].startswith(purl)
+                    and (component["purl"].startswith(purl)
+                         or (len(exact) > 0 and component["purl"] == exact))
                 ):
                     if wildcard:
                         # prüfen, ob es zu der bom-ref schon einen Eintrag gibt
@@ -841,12 +854,12 @@ def RemoveComponents(components: list):
                     )
                     dep["dependsOn"].remove(bom_ref)
 
-        else:
-            print(
-                "WARNING: Could not remove component, bom-ref prefix '"
-                + bom_ref_prefix
-                + "' not found"
-            )
+        # else:
+            # print(
+            #     "WARNING: Could not remove component, bom-ref prefix '"
+            #     + bom_ref_prefix
+            #     + "' not found"
+            # )
 
 
 def RemoveOrphans(sbom_json: dict):
@@ -982,6 +995,7 @@ if "components" in sbom_json:
 
 # Enrich target component
 if "metadata" in sbom_json and "component" in sbom_json["metadata"]:
+    print("Enriching main component...")
     component = sbom_json["metadata"]["component"]
     EnrichComponent(edb, component)
 else:
