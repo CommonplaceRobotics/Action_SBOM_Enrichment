@@ -447,13 +447,18 @@ def EnrichComponent(edb: EnrichtmentDataBase, component: dict):
                     component["supplier"]["url"] = [enrich_component.creator]
 
             # Licensing
-            # Original Licenses
-            # Collect original licenses
+            # Step 1: Original Licenses
+            # Step 1a: Get original licenses from the database
             original_licenses = enrich_component.original_licenses
+            # Step 1b: If no original licenses are defined in the database get the original licenses from SBOM
             if len(original_licenses) == 0:
                 original_licenses = []
-                # If none are defined try to read the licenses from the SBOM
                 for li in component["licenses"]:
+                    if "license" in li:
+                        li = li["license"]
+                    if "acknowledgement" in li and li["acknowledgement"] != "declared":
+                        continue
+
                     if "id" in li:
                         original_licenses.append(li["id"])
                     elif "name" in li:
@@ -461,26 +466,37 @@ def EnrichComponent(edb: EnrichtmentDataBase, component: dict):
                     elif "expression" in li:
                         original_licenses.append(li["expression"])
 
-            # Add original licenses
-            for license in original_licenses:
-                # If the license already is in the list: update the entry
-                found = False
-                for li in component["licenses"]:
-                    if (
-                        ("name" in li and li["name"] == license)
-                        or ("id" in li and li["id"] == license)
-                        or "expression" in li
-                        and li["expression"] == license
-                    ):
-                        if (
-                            "acknowledgement" not in li
-                            or li["acknowledgement"] == "declared"
-                        ):
-                            li["acknowledgement"] = "declared"
-                            found = True
+            # Step 1c: apply later
 
-                if not found:
-                    # Add new entry
+            # Step 2: Distribution Licenses
+            # Step 2a: Get distribution licenses from database
+            distribution_licenses = enrich_component.distribution_licenses
+            # Step 2b: If no distribution licenses are found, get them from the SBOM
+            if len(distribution_licenses) == 0:
+                distribution_licenses = []
+                for li in component["licenses"]:
+                    if "license" in li:
+                        li = li["license"]
+                    if "acknowledgement" in li and li["acknowledgement"] != "concluded":
+                        continue
+
+                    if "id" in li:
+                        original_licenses.append(li["id"])
+                    elif "name" in li:
+                        original_licenses.append(li["name"])
+                    elif "expression" in li:
+                        original_licenses.append(li["expression"])
+
+            # Step 2c: If still no distribution licenses are found, use the original licenses
+            if len(distribution_licenses) == 0:
+                distribution_licenses = original_licenses
+
+            # Step 1c/2d: Remove all licenses from SBOM
+            component["licenses"] = []
+
+            # Step 1c: Replace all original licenses in the SBOM
+            if len(original_licenses) > 0:
+                for license in original_licenses:
                     if IsKnownLicense(license):
                         print("\tAdding known original license '" + license + "'...")
                         component["licenses"].append(
@@ -502,32 +518,9 @@ def EnrichComponent(edb: EnrichtmentDataBase, component: dict):
                             }
                         )
 
-            # Distribution Licenses
-            # Collect distribution licenses
-            distribution_licenses = enrich_component.distribution_licenses
-            if len(distribution_licenses) == 0:
-                # Fallback
-                distribution_licenses = original_licenses
-
-            # Add distribution licenses
-            for license in distribution_licenses:
-                # If the license already is in the list: update the entry
-                found = False
-                for li in component["licenses"]:
-                    if (
-                        ("name" in li and li["name"] == license)
-                        or ("id" in li and li["id"] == license)
-                        or ("expression" in li and li["expression"] == license)
-                    ):
-                        if (
-                            "acknowledgement" not in li
-                            or li["acknowledgement"] == "concluded"
-                        ):
-                            li["acknowledgement"] = "concluded"
-                            found = True
-
-                if not found:
-                    # Add new entry
+            # Step 2d: Replace all distribution licenses in the SBOM
+            if len(distribution_licenses) > 0:
+                for license in distribution_licenses:
                     if IsKnownLicense(license):
                         print(
                             "\tAdding known distribution license '" + license + "'..."
@@ -551,30 +544,36 @@ def EnrichComponent(edb: EnrichtmentDataBase, component: dict):
                             }
                         )
 
-            # Effective License
-            # Do not overwrite existing entry
-            has_effective_license = False
-            for p in component["properties"]:
-                if "name" in p and p["name"] == "bsi:component:effectiveLicense":
-                    has_effective_license = True
+            # Step 3: Effective License
+            # Step 3a: Get effective license from database
+            effective_license = enrich_component.effective_license
+            # Step 3b: If the effective license is not defined in the database try to get it from the SBOM
+            for prop in component["properties"]:
+                if "name" in prop and prop["name"] == "bsi:component:effectiveLicense":
+                    effective_license = component["value"]
+                    break
+            # Step 3c: If the effective license is still not defined take the single distribution license
+            if len(effective_license) == 0 and len(distribution_licenses) == 1:
+                effective_license = distribution_licenses[0]
 
-            if not has_effective_license:
-                effective_license = enrich_component.effective_license
-                if len(effective_license) == 0 and len(distribution_licenses) > 0:
-                    # Fallback
-                    effective_license = distribution_licenses[0]
+            # Remove effective license entry from SBOM
+            for prop in component["properties"]:
+                if "name" in prop and prop["name"] == "bsi:component:effectiveLicense":
+                    component["properties"].remove(prop)
+                    break
 
-                if len(effective_license) > 0:
-                    print(
-                        "\tAdding effective license to '"
-                        + enrich_component.bom_ref
-                        + "'..."
-                    )
-                    licenseData = {
-                        "name": "bsi:component:effectiveLicense",
-                        "value": effective_license,
-                    }
-                    component["properties"].append(licenseData)
+            # Insert effective license
+            if len(effective_license) > 0:
+                print(
+                    "\tAdding effective license to '"
+                    + enrich_component.bom_ref
+                    + "'..."
+                )
+                licenseData = {
+                    "name": "bsi:component:effectiveLicense",
+                    "value": effective_license,
+                }
+                component["properties"].append(licenseData)
 
             # Filename of the component
             if len(enrich_component.filename_actual) > 0:
