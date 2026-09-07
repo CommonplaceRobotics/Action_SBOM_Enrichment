@@ -12,7 +12,8 @@ license = "MIT"
 dependencies = [
 	"requests (>= 2.0)",
 	"pathlib (>= 1.0)",
-	"license-expression (>= 30.4)"
+	"license-expression (>= 30.4)",
+	"pywin32 (>=312,<313) ; sys_platform == \"win32\""
 ]
 
 [build-system]

@@ -18,6 +18,10 @@ inputs:
     description: 'The CMake build directory'
     required: false
     default: ''
+  msproj_file:
+    description: 'MSProj project file'
+    required: false
+    default: ''
 
 runs:
   using: "composite"
@@ -43,16 +47,18 @@ runs:
       shell: bash
       run: |
         chmod +x sbom_tool/SbomEnrichment.py
-        if [ "${{ inputs.sbom_out }}" == "" ]; then
-            if [ "${{ inputs.cmake_build_dir }}" == "" ]; then
-                poetry --project=sbom_tool run python3 sbom_tool/SbomEnrichment.py "${{ inputs.database }}" "${{ inputs.sbom }}"
-            else
-                poetry --project=sbom_tool run python3 sbom_tool/SbomEnrichment.py "${{ inputs.database }}" "${{ inputs.sbom }}" -b "${{ inputs.cmake_build_dir }}"
-            fi
-        else
-            if [ "${{ inputs.cmake_build_dir }}" == "" ]; then
-                poetry --project=sbom_tool run python3 sbom_tool/SbomEnrichment.py "${{ inputs.database }}" "${{ inputs.sbom }}" -o "${{ inputs.sbom_out }}"
-            else
-                poetry --project=sbom_tool run python3 sbom_tool/SbomEnrichment.py "${{ inputs.database }}" "${{ inputs.sbom }}" -o "${{ inputs.sbom_out }}" -b "${{ inputs.cmake_build_dir }}"
-            fi
+
+        if [ "${{ inputs.sbom_out }}" != "" ]; then
+          PARAM_SBOM_OUT="--out ${{ inputs.sbom_out }}"
         fi
+
+        if [ "${{ inputs.cmake_build_dir }}" != "" ]; then
+          PARAM_CMAKE_BUILD_DIR="--cmake_dir ${{ inputs.cmake_build_dir }}"
+        fi
+
+        if [ "${{ inputs.msproj_file }}" != "" ]; then
+          PARAM_MSPROJ="--msbuild_proj ${{ inputs.msproj_file }}"
+        fi
+
+        echo "Parameters: $PARAM_SBOM_OUT $PARAM_CMAKE_BUILD_DIR $PARAM_MSPROJ"
+        poetry --project=sbom_tool run python3 sbom_tool/SbomEnrichment.py "${{ inputs.database }}" "${{ inputs.sbom }}" $PARAM_SBOM_OUT $PARAM_CMAKE_BUILD_DIR $PARAM_MSPROJ
